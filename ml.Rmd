@@ -1,0 +1,87 @@
+Title
+========================================================
+
+## Loading data
+```{r}
+trn <- read.csv("pml-training.csv", as.is=TRUE, na.strings=c('NA', '#DIV/0!', '""'))
+tst <- read.csv("pml-testing.csv", as.is=TRUE, na.strings=c('NA', '#DIV/0!', '""'))
+```
+
+## Splitting training set into training and validation
+```{r}
+library(caret)
+inTrain <- createDataPartition(y=trn$classe, p=.75, list=FALSE)
+trn <- trn[inTrain,]
+val <- trn[-inTrain,]
+```
+
+## Preprocessing
+
+1. Remove from the training, validation and testing sets the columns with too many unavailable values (more than half) in the training set, as well as the row id (first column), character columns 2 and 5, and features with near zero variance (new_window)
+```{r}
+cutoff <- dim(trn)[1] / 2
+trnTooManyNAs <- which(colSums(is.na(trn)) > cutoff)
+nzv <- nearZeroVar(trn)
+trn <- trn[, -c(trnTooManyNAs, 1, 2, 5, nzv)]
+val <- val[, -c(trnTooManyNAs, 1, 2, 5, nzv)]
+tst <- tst[, -c(trnTooManyNAs, 1, 2, 5, nzv)]
+```
+
+2. Centering and scaling
+```{r}
+lastFeature <- dim(trn)[2]
+preCS <- preProcess(trn[,-lastFeature], method=c("center", "scale"))
+trnCS <- predict(preCS, trn[,-lastFeature]) 
+valCS <- predict(preCS, val[,-lastFeature]) 
+tstCS <- predict(preCS, tst[,-lastFeature]) 
+```
+
+3. Extracting principal components
+```{r}
+prePCA <- preProcess(trnCS, method="pca")
+trnPCA <- predict(prePCA, trnCS)
+valPCA <- predict(prePCA, valCS)
+tstPCA <- predict(prePCA, tstCS)
+```
+
+## Testing some models
+
+0. Merge outcome into training dataframe
+```{r}
+trnPCAO <- cbind(trnPCA, trn[,lastFeature])
+names(trnPCAO)[length(trnPCAO)] <- "classe"
+```
+
+1. Classification trees
+```{r}
+fit.rpart <- train(classe ~ ., data=trnPCAO, method="rpart")
+pdt.rpart <- predict(fit.rpart, newdata=valPCA)
+```
+
+Accuracy on validation set
+```{r}
+sum(pdt.rpart == val$classe) / length(val$classe)
+```
+
+2. Random forests
+```{r}
+fit.rf <- train(classe ~ ., data=trnPCAO, method="rf")
+pdt.rf <- predict(fit.rf, newdata=valPCA)
+```
+
+Accuracy on validation set
+```{r}
+sum(pdt.rf == val$classe) / length(val$classe)
+```
+
+Expected accuracy: mean 0.97, sd 0.003
+```{r}
+fit.rf
+```
+
+Random forests accuracy on the validation set is very promissing.
+Predicting on the test set:
+```{r}
+pdt.rf.test <- predict(fit.rf, newdata=tstPCA)
+```
+All results are validated by the automatic evaluation tool.
